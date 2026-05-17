@@ -3,6 +3,10 @@ package `fun`.walawe.inference
 import android.content.Context
 import android.content.res.AssetManager
 import android.graphics.Bitmap
+import android.graphics.ImageDecoder
+import android.net.Uri
+import android.os.Build
+import android.provider.MediaStore
 import android.util.Log
 import androidx.core.graphics.scale
 import com.google.mediapipe.tasks.genai.llminference.GraphOptions
@@ -231,6 +235,20 @@ class GemmaInference @Inject constructor(
         context.assets.open(path).close()
         true
     }.getOrDefault(false)
+
+    fun uriToBitmap(uri: Uri): Bitmap {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val source = ImageDecoder.createSource(context.contentResolver, uri)
+            ImageDecoder.decodeBitmap(source) { decoder, _, _ ->
+                decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+                decoder.isMutableRequired = false
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
+                ?: throw IllegalStateException("Failed to decode bitmap from URI: $uri")
+        }
+    }
 
     private fun AssetManager.loadModelFile(
         modelPath: String
