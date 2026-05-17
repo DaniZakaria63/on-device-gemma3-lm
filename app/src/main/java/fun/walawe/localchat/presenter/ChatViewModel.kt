@@ -1,6 +1,7 @@
 package `fun`.walawe.localchat.presenter
 
 import android.util.Log
+import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -24,7 +25,6 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.UUID
 import javax.inject.Inject
-import kotlin.collections.copy
 
 @HiltViewModel
 class ChatViewModel @Inject constructor(
@@ -58,6 +58,7 @@ class ChatViewModel @Inject constructor(
             else -> false
         }
         uiState.copy(
+            modelState = state,
             isProcessing = isProcessing,
             error = if (state is InferenceState.Error) state.message else null
         )
@@ -96,19 +97,33 @@ class ChatViewModel @Inject constructor(
         )
 
         _messages.update {  listOf(assistantMessage, userMessage) + it }
-        _uiState.update { it.copy(isNewConversation = false) }
+        _uiState.update { it.copy(isNewConversation = false, selectedImageUri = null) }
 
         safeViewModelScope.launch {
-            gemmaInference.generateText(
-                prompt = message,
-                onTokenReceived = { partial ->
-                    appendToAssistant(assistantId, partial)
-                },
-                onComplete = { benchmark ->
-                    finishAssistantStream(assistantId, benchmark)
-                    Log.d(TAG, "sendMessage: Generation complete with benchmark: $benchmark")
-                },
-            )
+            if(imageUri == null){
+                gemmaInference.generateText(
+                    prompt = message,
+                    onTokenReceived = { partial ->
+                        appendToAssistant(assistantId, partial)
+                    },
+                    onComplete = { benchmark ->
+                        finishAssistantStream(assistantId, benchmark)
+                        Log.d(TAG, "sendMessage: Generation complete with benchmark: $benchmark")
+                    },
+                )
+            }else{
+                gemmaInference.generateTextWithImage(
+                    prompt = message,
+                    imageData = gemmaInference.uriToBitmap(imageUri.toUri()),
+                    onTokenReceived = { partial ->
+                        appendToAssistant(assistantId, partial)
+                    },
+                    onComplete = { benchmark ->
+                        finishAssistantStream(assistantId, benchmark)
+                        Log.d(TAG, "sendMessage: Generation complete with benchmark: $benchmark")
+                    },
+                )
+            }
         }
     }
 

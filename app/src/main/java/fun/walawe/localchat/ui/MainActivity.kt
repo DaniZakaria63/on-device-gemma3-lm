@@ -49,8 +49,11 @@ class MainActivity : ComponentActivity() {
                         viewModel.startNewConversation()
                     },
                     onSend = {
-                        viewModel.sendMessage(inputText)
-                        inputText = ""
+                        if (inputText.isNotBlank() && !uiState.isProcessing) {
+                            viewModel.sendMessage(inputText)
+                            inputText = ""
+                            viewModel.setSelectedImageUri(null)
+                        }
                     },
                     onRemoveImage = {
                         viewModel.setSelectedImageUri(null)

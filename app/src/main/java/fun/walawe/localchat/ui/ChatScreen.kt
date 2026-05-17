@@ -5,6 +5,7 @@ package `fun`.walawe.localchat.ui
  * Copy from MemeChat by Dani on 2026/5/1.
  * Copyright (c) 2026 Dani. All rights reserved.
  */
+import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -71,6 +72,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import `fun`.walawe.inference.model.InferenceState
 import `fun`.walawe.localchat.R
 import `fun`.walawe.localchat.model.ChatMessage
 import `fun`.walawe.localchat.model.ChatRole
@@ -98,12 +100,26 @@ fun ChatScreen(
                 modifier = Modifier.fillMaxWidth().shadow(4.dp),
                 windowInsets = WindowInsets.statusBars.only(WindowInsetsSides.Top),
                 title = {
-                    Text(
-                        text = if(uiState.isNewConversation) "New Conversation" else "Gemma 3n OnDevice Chat",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        fontWeight = FontWeight.Medium
-                    )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = if(uiState.isNewConversation) "New Conversation" else "Gemma 3n OnDevice Chat",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = when (uiState.modelState) {
+                                is InferenceState.LoadingModel -> "Loading model..."
+                                is InferenceState.Generating -> "Generating response..."
+                                is InferenceState.Idle -> "Gemma still offline"
+                                is InferenceState.Ready -> "Gemma is ready"
+                                else -> "Something happened"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                            modifier = Modifier.padding(top = 2.dp)
+                        )
+                    }
                 },
                 actions = {
                     IconButton(onClick = onNewChat) {
@@ -181,7 +197,6 @@ private fun MessageBubble(
         MaterialTheme.colorScheme.onTertiaryContainer
     }
     val alignment = if (isUser) Alignment.End else Alignment.Start
-    var collapseState by remember { mutableStateOf(true) }
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -213,11 +228,11 @@ private fun MessageBubble(
             Column(
                 modifier = Modifier.padding(12.dp)
             ) {
-                message.imageUri?.let {
+                if(message.imageUri.orEmpty().isNotEmpty()) {
                     val context = LocalContext.current
                     AsyncImage(
                         model = ImageRequest.Builder(context)
-                            .data(it)
+                            .data(message.imageUri)
                             .crossfade(true)
                             .build(),
                         contentDescription = "Attachment",
@@ -270,7 +285,7 @@ private fun InputBar(
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp, vertical = 12.dp)
         ) {
-            if (selectedImageUri != null) {
+            selectedImageUri?.let { image ->
                 Box(
                     modifier = Modifier
                         .width(120.dp)
@@ -281,7 +296,7 @@ private fun InputBar(
                     val context = LocalContext.current
                     AsyncImage(
                         model = ImageRequest.Builder(context)
-                            .data(selectedImageUri)
+                            .data(image)
                             .crossfade(true)
                             .build(),
                         contentDescription = "Selected image",
