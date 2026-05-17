@@ -43,6 +43,7 @@ android {
 
 dependencies {
     implementation(project(":inference"))
+    implementation(libs.androidx.coroutine)
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
