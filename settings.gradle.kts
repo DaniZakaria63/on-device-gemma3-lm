@@ -24,4 +24,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "Local Chat"
 include(":app")
- 
+include(":inference")

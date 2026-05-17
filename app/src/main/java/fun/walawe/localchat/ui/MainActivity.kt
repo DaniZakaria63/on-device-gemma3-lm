@@ -1,4 +1,4 @@
-package `fun`.walawe.localchat
+package `fun`.walawe.localchat.ui
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
