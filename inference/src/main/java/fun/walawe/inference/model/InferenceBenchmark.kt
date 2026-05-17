@@ -11,4 +11,8 @@ data class InferenceBenchmark(
                 "Total=${totalTimeMs}ms | " +
                 "Tokens=$totalTokens | " +
                 "Speed=${String.format("%.1f", decodeSpeedTps)} tok/s"
+
+    companion object {
+        fun empty() = InferenceBenchmark(0L, 0L, 0, 0f)
+    }
 }

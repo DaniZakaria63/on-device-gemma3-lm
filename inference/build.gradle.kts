@@ -28,6 +28,7 @@ android {
 dependencies {
     implementation(libs.androidx.coroutine)
     implementation(libs.tasks.genai)
+    implementation(libs.tasks.vision)
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
 }
