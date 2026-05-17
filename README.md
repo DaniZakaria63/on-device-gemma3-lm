@@ -1,8 +1,16 @@
+
 # LocalChat — On-Device LLM Inference with MediaPipe
 
 
 >An Android application demonstrating fully on-device multimodal LLM inference using **Google MediaPipe LLM Inference API** and **Gemma 3n**. No cloud. No API key. Everything runs locally on the device.
 ---
+
+| Text-to-Text | Image-to-Text | 
+| :----------: | :------------: | 
+| <img width="320" alt="Screenshot_20260518_023750" src="https://github.com/user-attachments/assets/3d07f405-af9d-4623-8593-23616e9de705" /> | <img width="320" alt="Screenshot_20260518_023745" src="https://github.com/user-attachments/assets/5cc92867-2ea3-4277-bef0-a542abab132a" /> | 
+
+
+
 
 ## Modules
 
