@@ -1,6 +1,5 @@
 package `fun`.walawe.localchat.presenter
 
-import android.nfc.Tag
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -26,8 +25,6 @@ import java.util.Locale
 import java.util.UUID
 import javax.inject.Inject
 import kotlin.collections.copy
-import kotlin.collections.get
-import kotlin.text.set
 
 @HiltViewModel
 class ChatViewModel @Inject constructor(
@@ -122,6 +119,7 @@ class ChatViewModel @Inject constructor(
         }
         safeViewModelScope.launch {
             _messages.value = emptyList()
+            gemmaInference.resetConversation()
             _uiState.update { it.copy(isNewConversation = true, selectedImageUri = null) }
         }
     }
@@ -148,6 +146,9 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    fun setSelectedImageUri(uri: String?) {
+        _uiState.update { it.copy(selectedImageUri = uri) }
+    }
 
     private fun currentTime(): String {
         val formatter = SimpleDateFormat("HH:mm", Locale.getDefault())
