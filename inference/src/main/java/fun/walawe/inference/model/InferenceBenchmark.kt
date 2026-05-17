@@ -1,0 +1,14 @@
+package `fun`.walawe.inference.model
+
+data class InferenceBenchmark(
+    val timeToFirstTokenMs: Long,
+    val totalTimeMs: Long,
+    val totalTokens: Int,
+    val decodeSpeedTps: Float,
+) {
+    override fun toString(): String =
+        "TTFT=${timeToFirstTokenMs}ms | " +
+                "Total=${totalTimeMs}ms | " +
+                "Tokens=$totalTokens | " +
+                "Speed=${String.format("%.1f", decodeSpeedTps)} tok/s"
+}
