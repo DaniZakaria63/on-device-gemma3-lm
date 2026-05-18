@@ -27,6 +27,10 @@ import java.nio.channels.FileChannel.MapMode.READ_ONLY
 import javax.inject.Inject
 import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.framework.image.MPImage
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 class GemmaInference @Inject constructor(
     @ApplicationContext private val context: Context
@@ -42,6 +46,10 @@ class GemmaInference @Inject constructor(
         private const val MODEL_FILE_NAME = "gemma-3n-E2B-it-int4.task"
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val inferenceDispatcher = Dispatchers.IO.limitedParallelism(1)
+    private val inferenceScope = CoroutineScope(inferenceDispatcher + SupervisorJob())
+
     private val _state = MutableStateFlow<InferenceState>(InferenceState.Idle)
     val state = _state.asStateFlow()
 
@@ -49,29 +57,31 @@ class GemmaInference @Inject constructor(
     val currentBenchmark: InferenceBenchmark? = null
     private var currentSession: LlmInferenceSession? = null
 
-    suspend fun loadModel() = withContext(Dispatchers.IO){
-        _state.value = InferenceState.LoadingModel
-        Log.d(TAG, "loadModel: Loading model from assets")
+    suspend fun loadModel() {
+        inferenceScope.launch(inferenceDispatcher) {
+            _state.value = InferenceState.LoadingModel
+            Log.d(TAG, "loadModel: Loading model from assets")
 
-        val modelPath = async { resolveModelPath() }
+            val modelPath = async { resolveModelPath() }
 
-        val inferenceOptions = LlmInference.LlmInferenceOptions.builder()
-            .setModelPath(modelPath.await())
-            .setMaxTokens(MAX_TOKENS)
-            .setMaxTopK(TOP_K)
-            .setPreferredBackend(LlmInference.Backend.GPU)
-            .setMaxNumImages(1)
-            .build()
+            val inferenceOptions = LlmInference.LlmInferenceOptions.builder()
+                .setModelPath(modelPath.await())
+                .setMaxTokens(MAX_TOKENS)
+                .setMaxTopK(TOP_K)
+                .setPreferredBackend(LlmInference.Backend.GPU)
+                .setMaxNumImages(1)
+                .build()
 
-        llmInference = LlmInference.createFromOptions(context, inferenceOptions)
+            llmInference = LlmInference.createFromOptions(context, inferenceOptions)
 
-        requireNotNull(llmInference) {
-            "LlmInference not initialized. Call loadModel() first."
+            requireNotNull(llmInference) {
+                "LlmInference not initialized. Call loadModel() first."
+            }
+
+            currentSession = createSession()
+            _state.value = InferenceState.Ready
+            Log.d(TAG, "loadModel: Model loaded successfully")
         }
-
-        currentSession = createSession()
-        _state.value = InferenceState.Ready
-        Log.d(TAG, "loadModel: Model loaded successfully")
     }
 
     fun generateText(
@@ -79,37 +89,39 @@ class GemmaInference @Inject constructor(
         onTokenReceived: (String) -> Unit,
         onComplete: (InferenceBenchmark) -> Unit
     ){
-        val session = requireNotNull(currentSession) {
-            "Inference session not initialized. Call loadModel() first."
-        }
+        inferenceScope.launch(inferenceDispatcher) {
+            val session = requireNotNull(currentSession) {
+                "Inference session not initialized. Call loadModel() first."
+            }
 
-        if(_state.value != InferenceState.Ready) {
-            Log.w(TAG, "generateText: Model is not ready. Current state: ${_state.value}")
-            onComplete(InferenceBenchmark.empty())
-            return
-        }
+            if(_state.value != InferenceState.Ready) {
+                Log.w(TAG, "generateText: Model is not ready. Current state: ${_state.value}")
+                onComplete(InferenceBenchmark.empty())
+                return@launch
+            }
 
-        _state.value = InferenceState.Generating
-        val startTime = System.currentTimeMillis()
-        val totalTokens = session.sizeInTokens(prompt)
-        session.addQueryChunk(prompt)
-        session.generateResponseAsync { string, isFinish ->
-            onTokenReceived(string)
-            if(isFinish){
-                val totalTime = System.currentTimeMillis() - startTime
-                val decodeSpeed = if (totalTime > 0) {
-                    totalTokens / (totalTime / 1000f)
-                } else {
-                    0f
+            _state.value = InferenceState.Generating
+            val startTime = System.currentTimeMillis()
+            val totalTokens = session.sizeInTokens(prompt)
+            session.addQueryChunk(prompt)
+            session.generateResponseAsync { string, isFinish ->
+                onTokenReceived(string)
+                if(isFinish){
+                    val totalTime = System.currentTimeMillis() - startTime
+                    val decodeSpeed = if (totalTime > 0) {
+                        totalTokens / (totalTime / 1000f)
+                    } else {
+                        0f
+                    }
+                    val benchmark = InferenceBenchmark(
+                        timeToFirstTokenMs = totalTime,
+                        totalTimeMs = totalTime,
+                        totalTokens = totalTokens,
+                        decodeSpeedTps = decodeSpeed
+                    )
+                    onComplete(benchmark)
+                    _state.value = InferenceState.Ready
                 }
-                val benchmark = InferenceBenchmark(
-                    timeToFirstTokenMs = totalTime,
-                    totalTimeMs = totalTime,
-                    totalTokens = totalTokens,
-                    decodeSpeedTps = decodeSpeed
-                )
-                onComplete(benchmark)
-                _state.value = InferenceState.Ready
             }
         }
     }
@@ -120,58 +132,62 @@ class GemmaInference @Inject constructor(
         onTokenReceived: (String) -> Unit,
         onComplete: (InferenceBenchmark) -> Unit
     ){
-        val session = requireNotNull(currentSession) {
-            "Session not initialized. Call loadModel() first."
-        }
+        inferenceScope.launch (inferenceDispatcher){
+            val session = requireNotNull(currentSession) {
+                "Session not initialized. Call loadModel() first."
+            }
 
-        if (_state.value !is InferenceState.Ready) {
-            Log.w(TAG, "generateWithImage() called but manager is not Ready.")
-            return
-        }
+            if (_state.value !is InferenceState.Ready) {
+                Log.w(TAG, "generateWithImage() called but manager is not Ready.")
+                return@launch
+            }
 
-        _state.value = InferenceState.Generating
-        val startTime = System.currentTimeMillis()
-        val totalTokens = session.sizeInTokens(prompt)
+            _state.value = InferenceState.Generating
+            val startTime = System.currentTimeMillis()
+            val totalTokens = session.sizeInTokens(prompt)
 
-        val preprocessBitmap = preprocessBitmap(imageData)
-        val processImage = BitmapImageBuilder(preprocessBitmap).build()
+            val preprocessBitmap = preprocessBitmap(imageData)
+            val processImage = BitmapImageBuilder(preprocessBitmap).build()
 
-        session.addQueryChunk(prompt)
-        session.addImage(processImage)
-        session.generateResponseAsync { token, isFinish ->
-            onTokenReceived(token)
-            if (isFinish) {
-                val totalTime = System.currentTimeMillis() - startTime
-                val decodeSpeed = if (totalTime > 0) {
-                    totalTokens / (totalTime / 1000f)
-                } else {
-                    0f
+            session.addQueryChunk(prompt)
+            session.addImage(processImage)
+            session.generateResponseAsync { token, isFinish ->
+                onTokenReceived(token)
+                if (isFinish) {
+                    val totalTime = System.currentTimeMillis() - startTime
+                    val decodeSpeed = if (totalTime > 0) {
+                        totalTokens / (totalTime / 1000f)
+                    } else {
+                        0f
+                    }
+                    val benchmark = InferenceBenchmark(
+                        timeToFirstTokenMs = totalTime,
+                        totalTimeMs = totalTime,
+                        totalTokens = totalTokens,
+                        decodeSpeedTps = decodeSpeed
+                    )
+                    onComplete(benchmark)
+                    _state.value = InferenceState.Ready
                 }
-                val benchmark = InferenceBenchmark(
-                    timeToFirstTokenMs = totalTime,
-                    totalTimeMs = totalTime,
-                    totalTokens = totalTokens,
-                    decodeSpeedTps = decodeSpeed
-                )
-                onComplete(benchmark)
-                _state.value = InferenceState.Ready
             }
         }
     }
 
     fun close() {
-        Log.d(TAG, "Closing Inference and releasing resources...")
+        inferenceScope.launch (inferenceDispatcher){
+            Log.d(TAG, "Closing Inference and releasing resources...")
 
-        runCatching { currentSession?.close() }
-            .onFailure { Log.w(TAG, "Error closing session: ${it.message}") }
-        currentSession = null
+            runCatching { currentSession?.close() }
+                .onFailure { Log.w(TAG, "Error closing session: ${it.message}") }
+            currentSession = null
 
-        runCatching { llmInference?.close() }
-            .onFailure { Log.w(TAG, "Error closing LlmInference: ${it.message}") }
-        llmInference = null
+            runCatching { llmInference?.close() }
+                .onFailure { Log.w(TAG, "Error closing LlmInference: ${it.message}") }
+            llmInference = null
 
-        _state.value = InferenceState.Idle
-        Log.d(TAG, "Resources released successfully.")
+            _state.value = InferenceState.Idle
+            Log.d(TAG, "Resources released successfully.")
+        }
     }
 
     fun resetConversation() {
